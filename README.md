@@ -1,113 +1,138 @@
 # turnstamp
 
-Prove what your AI coding agent actually did.
+Prove what your AI coding agent actually did, and which files a human touched.
 
-Your agent says it only changed three files. turnstamp lets you check. It keeps a
-tamper evident ledger of every turn: what the tree looked like, what each turn
-touched, and a hash chain that breaks the moment someone edits history.
+Your agent says it changed three files. turnstamp tells you which files the agent
+wrote, and flags every file a human changed after the agent said it was done.
 
 ```
-npx turnstamp init
-npx turnstamp stamp --turn 1 --tool claude
-npx turnstamp verify
+npm install -g turnstamp
+turnstamp install            # wires up OpenCode and Claude Code
+turnstamp verify
 ```
+
+Works with **OpenCode** and **Claude Code**, using each tool's own hooks. No
+filesystem watching and no guessing, because the agent reports each file it
+touches at the moment it touches it.
 
 ## Why
 
-Coding agents are fast and confident and not always accurate about their own
-work. A diff shows you the end state of a file. It does not show you that your
-agent read `.env`, ran a script, or quietly rewrote a file two turns after it
-said it was done.
+A diff shows the end state of a file. It does not tell you who wrote it, or
+whether something changed after the agent finished.
 
-turnstamp records the sequence and makes the record hard to fake. Every entry
-carries the hash of the entry before it, so deleting or editing one line in the
-middle breaks every hash after it.
+turnstamp records the agent's tool calls as they happen. Before the call it
+hashes the files the call is about to touch, after the call it hashes them
+again. That pair is the agent's own account of what it did, and it goes into a
+hash chain that breaks the moment anyone edits history.
+
+Anything the chain does not cover is not the agent. That is how a human edit is
+told apart from an agent edit without guessing.
+
+## Install
+
+```
+npm install -g turnstamp
+cd your-project
+turnstamp install
+```
+
+That writes:
+
+- `.opencode/plugins/turnstamp/index.js` for OpenCode
+- `.claude/settings.json` hook entries for Claude Code, merged with whatever is already there
+
+Start a new agent session and the hooks are live. Use `turnstamp install opencode`
+or `turnstamp install claude` to do just one. Add `--scope user` to install for
+every project instead of just this one.
+
+### What gets recorded
+
+| Agent | Tool | Recorded as |
+| --- | --- | --- |
+| OpenCode | `write`, `edit`, `patch` | file event with before and after hashes |
+| OpenCode | `shell` | call event with the command, since the files cannot be known up front |
+| Claude Code | `Write`, `Edit`, `MultiEdit`, `NotebookEdit` | file event with before and after hashes |
+| Claude Code | `Bash` | call event with the command |
 
 ## Commands
 
 | Command | What it does |
 | --- | --- |
-| `turnstamp init` | Creates `.turnstamp/ledger.jsonl` |
-| `turnstamp stamp` | Records the files that changed since the last stamp |
-| `turnstamp event --json '{...}'` | Records one agent event, for hooks |
-| `turnstamp verify` | Checks the hash chain and the files on disk |
-| `turnstamp log` | Reads the ledger back, optionally `--turn N` |
-
-### stamp
-
-```bash
-turnstamp stamp --turn 3 --tool claude --action edit
-```
-
-It hashes the tree, compares it to the previous snapshot, and writes one entry
-per changed file plus a summary entry. The summary holds the digest of the whole
-tree, so you can tell two turns apart without walking every file again.
-
-### event
-
-For agent hooks and wrapper scripts. Feed it whatever your agent gives you.
-
-```bash
-turnstamp event --json '{"turn":3,"tool":"claude","action":"bash","target":"npm test","detail":"exit 0"}'
-turnstamp event --json '{"turn":3,"tool":"claude","action":"read","target":"src/auth.js"}'
-```
+| `turnstamp install [agent]` | Wire up the hooks, create the ledger |
+| `turnstamp verify` | Check the chain and say who changed what |
+| `turnstamp log` | Read the ledger back, optionally `--turn N` |
+| `turnstamp stamp` | Manual snapshot, for when no hook is installed |
+| `turnstamp event --json '{...}'` | Record one event from your own tooling |
 
 ### verify
 
-```bash
-turnstamp verify
-```
-
 ```
 ledger   .turnstamp/ledger.jsonl
-entries  7
-head     7d5597b5559bff0a
+entries  14
+head     40af85f1ae3ce639
 chain    intact
-files    match the last stamp
+files    every file matches what the agent recorded
 ```
 
-Exit code is 0 when everything checks out and 1 when something does not. Use it
-as a CI gate or a pre commit hook.
+Exit code is 0 when everything checks out and 1 when something does not, so it
+works as a CI gate or a pre-commit hook.
 
-Two separate things get checked. The chain tells you whether the ledger itself
-was edited. The file check tells you whether anything was rewritten after it was
-stamped.
+When a human edits a file the agent wrote:
+
+```
+chain    intact
+files    changed with no agent call behind them
+  hello.txt: last written by write, now 2a688f29a91d0f54...
+```
+
+When someone edits the ledger itself:
 
 ```
 chain    BROKEN
   entry 6: digest - content changed after it was stamped
-files    changed after they were stamped
-  src/a.js: stamped 1df3032e75cb45e5..., now 19b1f8a398e0bf0c...
 ```
+
+## What it catches
+
+- a file rewritten after the agent said it was done
+- an agent claiming a write that never landed on disk
+- an entry edited to hide a file
+- an entry deleted from the middle
+- a careful forger who fixes one digest but not the link to the next entry
 
 ## What it does not do
 
-It does not stop an agent from doing something. It records what happened so you
-can check afterwards. It also cannot prove anything against someone who deletes
-the whole ledger and starts over, which is why a sealed head matters and why the
-next version signs the head with a key you keep.
+It does not stop an agent from doing something, it records what happened so you
+can check afterwards. A shell command is recorded as a call, not as a list of
+files, because there is no way to know what a command will touch before it runs.
 
-It catches the common cases:
-
-- a file rewritten after the agent said it was done
-- an entry edited to hide a file
-- an entry deleted from the middle
-- a careful forger who fixes the digest but not the link to the next entry
+It also cannot prove anything against someone who deletes the whole ledger and
+starts over. Signing the head with a key is the next step, not something 0.1.0
+does.
 
 ## Library
 
-The CLI is a thin wrapper. Everything is exported if you want it inside your own
-tooling.
+The CLI is a thin wrapper. Everything is exported.
 
 ```js
 import { appendEvent, verifyEntries, readLedger, ledgerPath } from "turnstamp";
 
 const file = ledgerPath(process.cwd());
-appendEvent(file, { turn: 1, tool: "claude", action: "read", target: "src/app.js" });
+appendEvent(file, {
+  actor: "agent",
+  kind: "file",
+  tool: "custom",
+  action: "write",
+  target: "src/app.js",
+  detail: "sha256 of the file",
+});
 
 const report = verifyEntries(readLedger(file));
 console.log(report.ok, report.problems);
 ```
+
+The OpenCode plugin lives at `turnstamp/opencode` if you would rather import it
+directly than use the installer.
 
 ## Ledger format
 
@@ -116,21 +141,27 @@ hash is stable across machines and Node versions.
 
 ```json
 {
-  "schema": 1,
+  "schema": 2,
   "seq": 2,
-  "at": "2026-11-16T13:42:59.123Z",
-  "turn": 1,
-  "tool": "claude",
+  "at": "2026-11-16T14:20:18.417Z",
+  "turn": null,
+  "actor": "opencode",
+  "kind": "file",
+  "session": "ses_abc",
+  "call": "call_def",
+  "tool": "write",
   "action": "write",
-  "target": "src/app.js",
-  "detail": "f51105f5972c...",
-  "prev": "948bccbeadb7...",
-  "chain": "3d1484ea99d5..."
+  "target": "hello.txt",
+  "before": "missing",
+  "detail": "40af85f1ae3ce639...",
+  "prev": "cab1073cf729ddf1...",
+  "chain": "8a1b9b0d0e6d0b4b..."
 }
 ```
 
 `prev` is the previous entry's `chain`. The first entry points at 64 zeroes.
-`detail` is the file's sha256 for a write, or free text for other events.
+`detail` is the hash after the call, `before` is the hash before it. `missing`
+means the file did not exist.
 
 Commit the ledger if you want other people to be able to check your work. It is
 a record, not a secret.

@@ -17,14 +17,27 @@
     "turnstamp": "./bin/turnstamp.js"
   },
   "exports": {
-    ".": "./src/index.js"
+    ".": "./src/index.js",
+    "./server": "./opencode.js",
+    "./opencode": "./opencode.js",
+    "./hooks/claude-code": "./hooks/claude-code.js"
   },
   "files": [
     "bin",
     "src",
+    "hooks",
+    "opencode.js",
     "README.md",
     "LICENSE"
   ],
+  "peerDependencies": {
+    "@opencode/plugin": "*"
+  },
+  "peerDependenciesMeta": {
+    "@opencode/plugin": {
+      "optional": true
+    }
+  },
   "engines": {
     "node": ">=18"
   },
