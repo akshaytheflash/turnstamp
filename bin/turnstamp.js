@@ -10,22 +10,23 @@ import {
   treeDigest,
 } from "../src/ledger.js";
 import { diffTrees, hashTree } from "../src/tree.js";
+import { initLedger, installClaudeCode, installOpencode } from "../src/install.js";
 
 const HELP = `turnstamp - prove what your agent actually did
 
 Usage
   turnstamp init                     create the ledger for this project
-  turnstamp stamp [options]          record the current state of the tree
-  turnstamp event --json '{...}'     record one agent event (for hooks)
-  turnstamp verify [--json]          check the chain and the files on disk
+  turnstamp install [agent]          wire up OpenCode and Claude Code hooks
+  turnstamp stamp [options]          manual snapshot, when no hook is installed
+  turnstamp event --json '{...}'     record one agent event yourself
+  turnstamp verify [--json]          check the chain and who changed what
   turnstamp log [--turn N] [--json]  read the ledger back
 
-Options for stamp
-  --turn N         which agent turn this belongs to, defaults to the next one
-  --tool NAME      tool name, defaults to manual
-  --action NAME    action name, defaults to snapshot
+install takes: opencode, claude, both (default)
+              and --scope user to write to your home directory
 
-verify exits 1 when the chain is broken or a stamped file changed on disk.
+verify exits 1 when the chain is broken or a file no longer matches what an
+agent recorded.
 `;
 
 export function parseArgs(argv) {
@@ -84,14 +85,29 @@ function nextTurn(entries) {
 }
 
 function cmdInit() {
-  const file = ledgerPath(process.cwd());
-  if (fs.existsSync(file)) {
-    console.log("ledger already exists");
-    return 0;
+  const file = initLedger(process.cwd());
+  console.log(`ready ${path.relative(process.cwd(), file)}`);
+  return 0;
+}
+
+function cmdInstall(args) {
+  const which = args._[0] || "both";
+  const scope = args.scope === "user" ? "user" : "project";
+  const cwd = process.cwd();
+
+  if (which === "opencode" || which === "both") {
+    const result = installOpencode(scope, cwd);
+    console.log(`opencode plugin written to ${result.dir}`);
   }
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, "", "utf8");
-  console.log(`created ${path.relative(process.cwd(), file)}`);
+
+  if (which === "claude" || which === "both") {
+    const result = installClaudeCode(scope, cwd);
+    console.log(`claude code hooks merged into ${result.file}`);
+  }
+
+  const file = initLedger(cwd);
+  console.log(`ledger ready at ${path.relative(cwd, file)}`);
+  console.log("restart the agent, or start a new session, to pick this up");
   return 0;
 }
 
@@ -117,6 +133,8 @@ function cmdStamp(args) {
     const detail = now.get(target) ?? "missing";
     appendEvent(file, {
       turn,
+      actor: "agent",
+      kind: "file",
       tool,
       action: detail === "missing" ? "delete" : "write",
       target,
@@ -126,6 +144,8 @@ function cmdStamp(args) {
 
   const summary = appendEvent(file, {
     turn,
+    actor: "agent",
+    kind: "call",
     tool,
     action,
     target: null,
@@ -175,11 +195,12 @@ function cmdVerify(args) {
   }
 
   if (report.drift.length === 0) {
-    console.log("files    match the last stamp");
+    console.log("files    every file matches what the agent recorded");
   } else {
-    console.log("files    changed after they were stamped");
+    console.log("files    changed with no agent call behind them");
     for (const item of report.drift) {
-      console.log(`  ${item.target}: stamped ${short(item.stamped)}, now ${short(item.current)}`);
+      const by = item.tool ? `last written by ${item.tool}` : "never seen by an agent";
+      console.log(`  ${item.target}: ${by}, now ${short(item.current)}`);
     }
   }
 
@@ -244,6 +265,8 @@ function main(argv) {
   switch (command) {
     case "init":
       return cmdInit();
+    case "install":
+      return cmdInstall(args);
     case "stamp":
       return cmdStamp(args);
     case "event":
