@@ -2,8 +2,10 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
+import { hashTree } from "./tree.js";
+
 export const GENESIS = "0".repeat(64);
-export const SCHEMA = 1;
+export const SCHEMA = 2;
 
 // Every entry hashes the previous one, so changing anything in the middle breaks
 // every hash after it. The canonical form is built by hand instead of relying on
@@ -15,9 +17,14 @@ const FIELDS = [
   "seq",
   "at",
   "turn",
+  "actor",
+  "kind",
+  "session",
+  "call",
   "tool",
   "action",
   "target",
+  "before",
   "detail",
   "prev",
 ];
@@ -88,7 +95,8 @@ export function lastHash(entries) {
   return entries[entries.length - 1].chain;
 }
 
-// Appends one event. Called by the CLI and by wrappers around agent hooks.
+// Appends one event. Called by the CLI, by the OpenCode plugin and by the
+// Claude Code hook, so every path into the ledger lands here.
 export function appendEvent(file, event) {
   const entries = readLedger(file);
   const seq = entries.length + 1;
@@ -97,9 +105,14 @@ export function appendEvent(file, event) {
     seq,
     at: event.at || new Date().toISOString(),
     turn: event.turn ?? null,
+    actor: event.actor || "agent",
+    kind: event.kind || "event",
+    session: event.session ?? null,
+    call: event.call ?? null,
     tool: event.tool || "unknown",
     action: event.action || "event",
     target: event.target ?? null,
+    before: event.before ?? null,
     detail: event.detail ?? null,
     prev: lastHash(entries),
   });
@@ -153,47 +166,96 @@ export function verifyEntries(entries) {
   };
 }
 
-// Reads the ledger off disk and decides whether the working tree still matches
-// what the last stamps said it looked like.
-export function checkTree(file, root = process.cwd()) {
+// Reads the ledger off disk and classifies every file it knows about:
+//
+//   agent     the file on disk matches the last thing an agent recorded
+//   human     the file changed and no agent call explains it
+//   unknown   the file exists but no event ever named it
+//
+// That is the whole point of the hooks. A file the ledger never saw cannot be
+// blamed on the agent, so it is reported as a human change.
+export function checkTree(file, root = process.cwd(), options = {}) {
+  const { includeUntracked = false } = options;
   const entries = readLedger(file);
   const report = verifyEntries(entries);
 
+  // Last recorded state per path, from any actor, plus the call that set it.
   const lastByTarget = new Map();
   for (const entry of entries) {
-    // Only write and delete describe a file's content. Other events can carry a
-    // target too, like a shell command, and those are not files on disk.
-    if (!entry.target || (entry.action !== "write" && entry.action !== "delete")) {
+    if (!isFileEvent(entry)) {
       continue;
     }
     lastByTarget.set(entry.target, entry);
   }
 
-  const drift = [];
+  const files = [];
   for (const [target, entry] of lastByTarget) {
-    const abs = path.join(root, target);
-    let current = null;
+    const current = readTreeState(path.join(root, target));
 
-    try {
-      const stat = fs.statSync(abs);
-      if (stat.isFile()) {
-        current = sha256(fs.readFileSync(abs));
-      } else if (stat.isDirectory()) {
-        current = "dir";
-      }
-    } catch {
-      current = "missing";
+    // A file that still matches what the agent last wrote is accounted for. The
+    // rest is drift, and drift with no agent call behind it is the human's.
+    if (current === entry.detail) {
+      continue;
     }
 
-    if (current !== entry.detail) {
-      drift.push({
+    files.push({
+      target,
+      state: "human",
+      by: entry.actor,
+      stamped: entry.detail,
+      current,
+      at: entry.at,
+      tool: entry.tool,
+      session: entry.session,
+    });
+  }
+
+  // Files the agent never touched cannot be blamed on it. Listing every one of
+  // them would drown the report, so this only runs when asked.
+  if (includeUntracked) {
+    for (const [target, current] of hashTree(root)) {
+      if (lastByTarget.has(target)) {
+        continue;
+      }
+      files.push({
         target,
-        stamped: entry.detail,
+        state: "untracked",
+        by: null,
+        stamped: null,
         current,
-        at: entry.at,
+        at: null,
+        tool: null,
+        session: null,
       });
     }
   }
 
-  return { ...report, drift };
+  return { ...report, drift: files.sort((a, b) => a.target.localeCompare(b.target)) };
+}
+
+// Which entries describe a file's content. A call event or a shell command can
+// carry a target too, and those are not files on disk.
+export function isFileEvent(entry) {
+  if (!entry.target) {
+    return false;
+  }
+  if (entry.kind && entry.kind !== "file") {
+    return false;
+  }
+  return entry.action === "write" || entry.action === "edit" || entry.action === "delete";
+}
+
+export function readTreeState(abs) {
+  try {
+    const stat = fs.statSync(abs);
+    if (stat.isFile()) {
+      return sha256(fs.readFileSync(abs));
+    }
+    if (stat.isDirectory()) {
+      return "dir";
+    }
+    return "other";
+  } catch {
+    return "missing";
+  }
 }
