@@ -1,0 +1,44 @@
+{
+  "name": "turnstamp",
+  "version": "0.1.0",
+  "description": "Tamper-evident ledger for AI coding agents: prove what your agent actually did.",
+  "license": "MIT",
+  "author": "akshaytheflash",
+  "homepage": "https://github.com/akshaytheflash/turnstamp#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/akshaytheflash/turnstamp.git"
+  },
+  "bugs": {
+    "url": "https://github.com/akshaytheflash/turnstamp/issues"
+  },
+  "type": "module",
+  "bin": {
+    "turnstamp": "./bin/turnstamp.js"
+  },
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "files": [
+    "bin",
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  },
+  "keywords": [
+    "ai",
+    "agents",
+    "audit",
+    "ledger",
+    "provenance",
+    "tamper-evident",
+    "hash-chain",
+    "coding-agents"
+  ]
+}
