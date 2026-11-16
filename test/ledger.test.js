@@ -128,7 +128,13 @@ test("checkTree reports a file changed after it was stamped", () => {
   const file = ledgerPath(root);
 
   const before = hashTree(root);
-  appendEvent(file, { tool: "claude", action: "write", target: "app.js", detail: before.get("app.js") });
+  appendEvent(file, {
+    kind: "file",
+    tool: "claude",
+    action: "write",
+    target: "app.js",
+    detail: before.get("app.js"),
+  });
 
   let report = checkTree(file, root);
   assert.equal(report.drift.length, 0);
@@ -145,7 +151,13 @@ test("checkTree reports a stamped file that was deleted", () => {
   const root = tempProject({ "gone.txt": "bye" });
   const file = ledgerPath(root);
   const before = hashTree(root);
-  appendEvent(file, { tool: "claude", action: "write", target: "gone.txt", detail: before.get("gone.txt") });
+  appendEvent(file, {
+    kind: "file",
+    tool: "claude",
+    action: "write",
+    target: "gone.txt",
+    detail: before.get("gone.txt"),
+  });
 
   fs.unlinkSync(path.join(root, "gone.txt"));
   const report = checkTree(file, root);

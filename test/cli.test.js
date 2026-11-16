@@ -49,7 +49,7 @@ test("stamp then verify succeeds on a clean tree", () => {
   const verified = run(root, "verify");
   assert.equal(verified.code, 0);
   assert.match(verified.stdout, /chain    intact/);
-  assert.match(verified.stdout, /files    match the last stamp/);
+  assert.match(verified.stdout, /files    every file matches what the agent recorded/);
 });
 
 test("verify fails when a stamped file is rewritten", () => {
@@ -111,7 +111,13 @@ test("a deleted file shows as missing drift", () => {
   const root = tempProject({ "keep.js": "1", "drop.js": "1" });
   const file = ledgerPath(root);
   const before = hashTree(root);
-  appendEvent(file, { turn: 1, action: "write", target: "drop.js", detail: before.get("drop.js") });
+  appendEvent(file, {
+    turn: 1,
+    kind: "file",
+    action: "write",
+    target: "drop.js",
+    detail: before.get("drop.js"),
+  });
 
   fs.unlinkSync(path.join(root, "drop.js"));
   const report = checkTree(file, root);
