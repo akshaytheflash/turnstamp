@@ -1,6 +1,6 @@
 {
   "name": "turnstamp",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Tamper-evident ledger for AI coding agents: prove what your agent actually did.",
   "license": "MIT",
   "author": "akshaytheflash",
