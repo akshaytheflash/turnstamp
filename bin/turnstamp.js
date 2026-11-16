@@ -255,9 +255,16 @@ function cmdEvent(args) {
 
 function main(argv) {
   const [command, ...rest] = argv;
+
+  // --help can appear anywhere, and parseArgs would swallow it into args.
+  if (argv.includes("--help") || argv.includes("-h")) {
+    console.log(HELP);
+    return 0;
+  }
+
   const args = parseArgs(rest);
 
-  if (!command || command === "help" || args.help) {
+  if (!command || command === "help") {
     console.log(HELP);
     return 0;
   }
