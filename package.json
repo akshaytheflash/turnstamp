@@ -1,6 +1,6 @@
 {
   "name": "turnstamp",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "description": "Tamper-evident ledger for AI coding agents: prove what your agent actually did.",
   "license": "MIT",
   "author": "akshaytheflash",
@@ -46,12 +46,16 @@
   },
   "keywords": [
     "ai",
-    "agents",
+    "agent",
+    "ai-agent",
+    "coding-agent",
     "audit",
-    "ledger",
     "provenance",
-    "tamper-evident",
     "hash-chain",
-    "coding-agents"
+    "tamper-evident",
+    "opencode",
+    "claude-code",
+    "ledger",
+    "ci"
   ]
 }

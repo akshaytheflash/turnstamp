@@ -1,0 +1,6 @@
+# Build output and caches. turnstamp skips these before hashing them.
+.next/
+coverage/
+*.log
+*.tgz
+.DS_Store

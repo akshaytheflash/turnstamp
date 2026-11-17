@@ -1,4 +1,4 @@
 node_modules/
-.turnstamp/
+# .turnstamp/ is committed on purpose: the ledger is the record
 *.tgz
 .DS_Store

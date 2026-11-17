@@ -59,7 +59,7 @@ every project instead of just this one.
 | Command | What it does |
 | --- | --- |
 | `turnstamp install [agent]` | Wire up the hooks, create the ledger |
-| `turnstamp verify` | Check the chain and say who changed what |
+| `turnstamp verify [--staged]` | Check the chain and say who changed what. `--staged` judges only what git is about to commit |
 | `turnstamp log` | Read the ledger back, optionally `--turn N` |
 | `turnstamp stamp` | Manual snapshot, for when no hook is installed |
 | `turnstamp event --json '{...}'` | Record one event from your own tooling |
@@ -77,6 +77,15 @@ files    every file matches what the agent recorded
 Exit code is 0 when everything checks out and 1 when something does not, so it
 works as a CI gate or a pre-commit hook.
 
+Use `--staged` in a pre-commit hook. It still checks the whole chain, but it
+only fails on drift in the paths you are committing, so a file you edited and
+never staged does not block the commit.
+
+```
+#!/bin/sh
+turnstamp verify --staged
+```
+
 When a human edits a file the agent wrote:
 
 ```
@@ -91,6 +100,25 @@ When someone edits the ledger itself:
 chain    BROKEN
   entry 6: digest - content changed after it was stamped
 ```
+
+## What it skips
+
+`node_modules`, `.git`, `dist`, `build`, `target`, `.venv` and `__pycache__` are
+always skipped. For the rest, drop a `.turnstampignore` at the root. The syntax
+is gitignore shaped:
+
+```
+# generated, never worth hashing
+.next/
+coverage/
+*.lock
+# a single deep file
+packages/app/dist/bundle.js
+```
+
+Patterns with no slash match that name at any depth, a trailing slash matches
+directories only. Add `.turnstampignore` itself and the ledger to your git
+history so the record travels with the code.
 
 ## What it catches
 

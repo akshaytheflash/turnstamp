@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import cp from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -19,14 +20,16 @@ Usage
   turnstamp install [agent]          wire up OpenCode and Claude Code hooks
   turnstamp stamp [options]          manual snapshot, when no hook is installed
   turnstamp event --json '{...}'     record one agent event yourself
-  turnstamp verify [--json]          check the chain and who changed what
+  turnstamp verify [--json] [--staged]
+                                     check the chain and who changed what
   turnstamp log [--turn N] [--json]  read the ledger back
 
 install takes: opencode, claude, both (default)
               and --scope user to write to your home directory
 
 verify exits 1 when the chain is broken or a file no longer matches what an
-agent recorded.
+agent recorded. --staged only judges the paths git is about to commit, so it
+works as a pre-commit hook.
 `;
 
 export function parseArgs(argv) {
@@ -170,14 +173,40 @@ function short(value) {
   return value.length > 16 ? `${value.slice(0, 16)}...` : value;
 }
 
+// --staged limits the human-drift check to the paths git is about to commit.
+// A broken chain is always fatal: that is the ledger itself, not the work.
+function stagedTargets(root) {
+  try {
+    const { execFileSync } = cp;
+    const raw = execFileSync("git", ["diff", "--cached", "--name-only", "-z"], {
+      cwd: root,
+      encoding: "utf8",
+    });
+    return new Set(raw.split("\0").filter(Boolean));
+  } catch {
+    return null;
+  }
+}
+
 function cmdVerify(args) {
   const root = process.cwd();
   const file = ledgerPath(root);
   const report = checkTree(file, root);
-  const ok = report.ok && report.drift.length === 0;
+  let drift = report.drift;
+
+  if (args.staged) {
+    const staged = stagedTargets(root);
+    if (staged === null) {
+      console.error("turnstamp: --staged needs git in this project");
+      return 1;
+    }
+    drift = drift.filter((item) => staged.has(item.target));
+  }
+
+  const ok = report.ok && drift.length === 0;
 
   if (args.json) {
-    console.log(JSON.stringify(report, null, 2));
+    console.log(JSON.stringify(args.staged ? { ...report, drift } : report, null, 2));
     return ok ? 0 : 1;
   }
 
@@ -194,11 +223,12 @@ function cmdVerify(args) {
     }
   }
 
-  if (report.drift.length === 0) {
-    console.log("files    every file matches what the agent recorded");
+  const scope = args.staged ? " (staged only)" : "";
+  if (drift.length === 0) {
+    console.log(`files    every file matches what the agent recorded${scope}`);
   } else {
-    console.log("files    changed with no agent call behind them");
-    for (const item of report.drift) {
+    console.log(`files    changed with no agent call behind them${scope}`);
+    for (const item of drift) {
       const by = item.tool ? `last written by ${item.tool}` : "never seen by an agent";
       console.log(`  ${item.target}: ${by}, now ${short(item.current)}`);
     }

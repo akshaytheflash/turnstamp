@@ -18,3 +18,20 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
       - run: npm test
+
+  # The ledger in this repo is itself versioned, so CI can prove the history
+  # nobody edited. This needs one Linux runner because the ledger is built on
+  # this checkout.
+  ledger:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Chain still intact
+        run: node bin/turnstamp.js verify
+      - name: Staged drift check
+        run: node bin/turnstamp.js verify --staged
